@@ -562,7 +562,7 @@ def find(
 
     # img path might have more than once face
     target_objs = functions.extract_faces(
-        img=img_path,
+        img=str(img_path),
         target_size=target_size,
         detector_backend=detector_backend,
         grayscale=False,
