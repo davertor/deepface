@@ -5,6 +5,8 @@ import warnings
 import time
 import pickle
 import logging
+from pathlib import Path
+from typing import Optional
 
 # 3rd party dependencies
 import numpy as np
@@ -400,27 +402,33 @@ def analyze(
 
 
 def find(
-    img_path,
-    db_path,
-    model_name="VGG-Face",
-    distance_metric="cosine",
-    enforce_detection=True,
-    detector_backend="opencv",
-    align=True,
-    normalization="base",
-    silent=False,
+    img_path: Path,
+    imgs_folder: Path,
+    embeddings_folder: Optional[Path] = None,
+    embeddings_name: Optional[str] = None,
+    model_name: str = "VGG-Face",
+    distance_metric: str = "cosine",
+    enforce_detection: bool = True,
+    detector_backend: str = "opencv",
+    align: bool = True,
+    normalization: str = "base",
+    silent: bool = False,
 ):
     """
     This function applies verification several times and find the identities in a database
 
     Parameters:
-            img_path: exact image path, numpy array (BGR) or based64 encoded image.
+            img_path (Path): exact image path, numpy array (BGR) or based64 encoded image.
             Source image can have many faces. Then, result will be the size of number of
             faces in the source image.
 
-            db_path (string): You should store some image files in a folder and pass the
+            imgs_folder (Path): You should store some image files in a folder and pass the
             exact folder path to this. A database image can also have many faces.
             Then, all detected faces in db side will be considered in the decision.
+            
+            embeddings_folder (Path): Folder where the pre-computed embeddings will be saved.
+            
+            embeddings_name (str): Name of the pre-computed embeddings file.
 
             model_name (string): VGG-Face, Facenet, Facenet512, OpenFace, DeepFace, DeepID,
             Dlib, ArcFace, SFace or Ensemble
@@ -448,35 +456,43 @@ def find(
     tic = time.time()
 
     # -------------------------------
-    if os.path.isdir(db_path) is not True:
-        raise ValueError("Passed db_path does not exist!")
+    if os.path.isdir(imgs_folder) is not True:
+        raise ValueError(f"Passed imgs_folder {imgs_folder} does not exist!")
 
     target_size = functions.find_target_size(model_name=model_name)
 
     # ---------------------------------------
 
-    file_name = f"representations_{model_name}.pkl"
-    file_name = file_name.replace("-", "_").lower()
+    # Handle embeddings file creation
+    if embeddings_folder is None:
+        embeddings_folder = imgs_folder
+    if not embeddings_folder.exists():
+        os.makedirs(embeddings_folder)
+    if embeddings_name is None:
+        embeddings_name = f"representations_{model_name}.pkl".replace("-", "_").lower()
+    
+    embeddings_path = embeddings_folder / embeddings_name
 
-    if path.exists(db_path + "/" + file_name):
-
+    # If exists, load embeddings file
+    if embeddings_path.exists():
         if not silent:
             print(
-                f"WARNING: Representations for images in {db_path} folder were previously stored"
-                + f" in {file_name}. If you added new instances after the creation, then please "
+                f"WARNING: Representations for images in {imgs_folder} folder were previously stored"
+                + f" in {embeddings_name}. If you added new instances after the creation, then please "
                 + "delete this file and call find function again. It will create it again."
             )
 
-        with open(f"{db_path}/{file_name}", "rb") as f:
+        with open(embeddings_path, "rb") as f:
             representations = pickle.load(f)
-
+            
         if not silent:
-            print("There are ", len(representations), " representations found in ", file_name)
+            print("There are ", len(representations), " representations found in ", embeddings_name)
 
-    else:  # create representation.pkl from scratch
+    # If not exists, create embeddings file
+    else:
         employees = []
 
-        for r, _, f in os.walk(db_path):
+        for r, _, f in os.walk(str(imgs_folder)):
             for file in f:
                 if (
                     (".jpg" in file.lower())
@@ -487,11 +503,7 @@ def find(
                     employees.append(exact_path)
 
         if len(employees) == 0:
-            raise ValueError(
-                "There is no image in ",
-                db_path,
-                " folder! Validate .jpg or .png files exist in this path.",
-            )
+            raise ValueError(f"There is no image in {imgs_folder} folder!")
 
         # ------------------------
         # find representations for db images
@@ -535,12 +547,12 @@ def find(
 
         # -------------------------------
 
-        with open(f"{db_path}/{file_name}", "wb") as f:
+        with open(embeddings_path, "wb") as f:
             pickle.dump(representations, f)
 
         if not silent:
             print(
-                f"Representations stored in {db_path}/{file_name} file."
+                f"Representations stored in {embeddings_path} file."
                 + "Please delete this file when you add new identities in your database."
             )
 
